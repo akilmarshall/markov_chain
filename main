@@ -1,0 +1,135 @@
+#!/usr/bin/python3
+import click
+import random
+import pickle
+# from colored import fg
+from collections import deque, defaultdict
+
+
+def filter_read_char(fname):
+    with open(fname) as f:
+        while True:
+            c = f.read(1)
+            # if c.isprintable():
+            if not c.isspace():
+                if c != '':
+                    yield c
+                else:
+                    yield None
+            else:
+                yield ' '
+
+
+def filter_read_word(fname):
+    pass
+    # while True:
+    #     with open(fname) as f:
+    #         for line in f:
+    #             line = line.split(' ')
+    #             for w in line:
+    #                 yield w
+    #     yield None
+
+
+class markov_chain():
+    """Docstring for markov_chain. """
+
+    def __init__(self, n):
+        # n is the length of the block, ie a char based markov chain with
+        # n = 4 will parse the input file 4 chars at a time to peak at the next
+        self.n = n
+        self.chain = defaultdict(list)
+
+    def pop(self, c: str) -> str:
+        if len(c) == self.n:
+            return random.choice(self.debug[c])
+        else:
+            return 'degenerate string: ' + c
+
+    def parse(self, fname: str, parser):
+        # a function from i/o -> markov chain
+        # parser is a generator, chars or words from a file, pixels from an
+        # image, notes from a song, etc
+        file = parser(fname)
+        c = ''
+        n_queue = deque()
+        while c is not None:
+            if len(n_queue) < self.n:
+                n_queue.append(c)
+            else:
+                seg = ''.join([str(x) for x in n_queue])
+                self.chain[seg].append(c)
+                n_queue.popleft()
+                n_queue.append(c)
+            c = next(file)
+
+    def dump_chain(self):
+        for i in self.chain:
+            print(i, self.chain[i])
+
+    def generate(self, c: str, n=50) -> str:
+        # out is a list of chars
+        out = []
+        # c is a str of n length
+        x = len(c)
+        try:
+            out += [a for a in random.choice(list(filter(
+                lambda s: True if s[:x] == c else False, self.chain.keys())))]
+        except Exception as e:
+            print('degenerate seed:', c)
+            return e
+        for i in range(n - len(out)):
+            seg = ''.join(out[-self.n:])
+            choice = random.choice(self.chain.get(seg))
+            out.append(choice)
+        return ''.join(out)
+
+    def debug(self):
+        for i, key in enumerate(self.chain.keys()):
+            print(len(key))
+
+    def exist(self, s) -> bool:
+        if s in self.chain:
+            return True
+        return False
+
+
+@click.command()
+@click.option('--textfile', default='input', help='default: input\nA text file'
+              ' to generate a markov chain from')
+@click.option('--mlen', default=5, help='default: 5\nAn integer n that '
+              'describes the length of the key, e.g. --length 4 for  character'
+              ' based markov chain, keys will be strings of length 4')
+@click.option('--slen', default=50, help='default: 50\nThe length of the '
+              'output. e.g. a character markov chain will output a 50 char '
+              'string or a word markov chain will output a 50 word text blob.')
+@click.option('--unit', default='char', help='default: char\nThe structure of '
+              'the chain. The default will result in a character based '
+              'markov chain')
+@click.option('--seed', default='A', help='seed value for generation')
+@click.option('--generate', is_flag=True, help='will create an mkc file('
+              'the serialized markov chain) can be loaded with the '
+              '--load option')
+@click.option('--load', default='', help='specify an mkc file to load'
+              '(serialized markov'
+              ' chain) file to load')
+def main(textfile, mlen, slen, unit, seed, generate, load):
+    '''A program that can generate and use markov chains.'''
+    type_ = {'char': filter_read_char, 'word': filter_read_word}
+    m = None
+    if load:
+        with open(load, 'rb') as f:
+            m = pickle.load(f)
+    else:
+        m = markov_chain(mlen)
+        m.parse(textfile, type_[unit])
+    if generate:
+        with open(f'{textfile}.mkc', 'wb') as f:
+            pickle.dump(m, f)
+        print(f'created: {textfile}.mkc')
+    else:
+        print(m.generate(seed, n=slen))
+
+
+if __name__ == '__main__':
+    main()
